@@ -38,15 +38,11 @@ import android.os.Handler;
 import android.os.RemoteException;
 import android.util.Log;
 
-import org.altbeacon.beacon.Beacon;
-import org.altbeacon.beacon.BeaconConsumer;
-import org.altbeacon.beacon.BeaconManager;
-import org.altbeacon.beacon.BeaconParser;
-import org.altbeacon.beacon.BleNotAvailableException;
-import org.altbeacon.beacon.Identifier;
-import org.altbeacon.beacon.MonitorNotifier;
-import org.altbeacon.beacon.RangeNotifier;
-import org.altbeacon.beacon.Region;
+import org.altbeacon.beacon.*;
+import org.altbeacon.beacon.powersave.BackgroundPowerSaver;
+import org.altbeacon.beacon.service.BeaconService;
+import org.altbeacon.beacon.startup.BootstrapNotifier;
+import org.altbeacon.beacon.startup.RegionBootstrap;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
@@ -121,6 +117,10 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
         debugEnabled = true;
 
+        //Start BackgroundBeaconService.
+        Intent startServiceIntent = new Intent(this.getApplicationContext(), BackgroundBeaconService.class);
+        this.getApplicationContext().startService(startServiceIntent);
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
             initBluetoothAdapter();
         }
@@ -134,12 +134,13 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
      */
     @Override
     public void onDestroy() {
-        iBeaconManager.unbind(this);
+        // TODO: do we need this with BackgroundBeaconService?
+        /*iBeaconManager.unbind(this);
 
         if (broadcastReceiver != null) {
             cordova.getActivity().unregisterReceiver(broadcastReceiver);
             broadcastReceiver = null;
-        }
+        }*/
 
         super.onDestroy();
     }
