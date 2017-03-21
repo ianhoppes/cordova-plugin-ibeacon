@@ -452,19 +452,19 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         iBeaconManager.setMonitorNotifier(new MonitorNotifier() {
             @Override
             public void didEnterRegion(Region region) {
-                debugLog("didEnterRegion INSIDE for " + region.getUniqueId());
+                debugLog("foreground didEnterRegion INSIDE for " + region.getUniqueId());
                 dispatchMonitorState("didEnterRegion", MonitorNotifier.INSIDE, region, callbackContext);
             }
 
             @Override
             public void didExitRegion(Region region) {
-                debugLog("didExitRegion OUTSIDE for " + region.getUniqueId());
+                debugLog("foreground didExitRegion OUTSIDE for " + region.getUniqueId());
                 dispatchMonitorState("didExitRegion", MonitorNotifier.OUTSIDE, region, callbackContext);
             }
 
             @Override
             public void didDetermineStateForRegion(int state, Region region) {
-                debugLog("didDetermineStateForRegion '" + nameOfRegionState(state) + "' for region: " + region.getUniqueId());
+                debugLog("foreground didDetermineStateForRegion '" + nameOfRegionState(state) + "' for region: " + region.getUniqueId());
                 dispatchMonitorState("didDetermineStateForRegion", state, region, callbackContext);
             }
 
