@@ -23,12 +23,13 @@ public class BackgroundBeaconService extends Service implements BootstrapNotifie
 		super();
 	}
 
+	public static final String TAG = "com.unarin.cordova.beacon";
 	private BackgroundPowerSaver backgroundPowerSaver;
 	private BeaconManager iBeaconManager;
 	private RegionBootstrap regionBootstrap;
 
 	public void onCreate() {
-		Log.d("com.unarin.cordova.beacon", "BACKGROUND: Creating BackgroundBeaconService.");
+		Log.d(TAG, "BACKGROUND: Creating BackgroundBeaconService.");
 		super.onCreate();
 		iBeaconManager = BeaconManager.getInstanceForApplication(this);
 		iBeaconManager.getBeaconParsers().add(new BeaconParser().setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"));
@@ -41,26 +42,26 @@ public class BackgroundBeaconService extends Service implements BootstrapNotifie
 
 		Region region = new Region("backgroundRegion", Identifier.parse("B9407F30-F5F8-466E-AFF9-25556B57FE6D"), null, null);
 		regionBootstrap = new RegionBootstrap(this, region);
-		Log.d("com.unarin.cordova.beacon", "BACKGROUND: Created RegionBootstrap in BackgroundBeaconService.");
+		Log.d(TAG, "BACKGROUND: Created RegionBootstrap in BackgroundBeaconService.");
 	}
 
 	public void onDestroy(){
-		Log.d("com.unarin.cordova.beacon", "Destroying BackgroundBeaconService");
+		Log.d(TAG, "Destroying BackgroundBeaconService");
 	}
 
 	@Override
 	public void didEnterRegion(Region region) {
-		Log.d("com.unarin.cordova.beacon", "BackgroundBeaconService.didEnterRegion called!");
+		Log.d(TAG, "BackgroundBeaconService.didEnterRegion called!");
 	}
 
 	@Override
 	public void didExitRegion(Region region) {
-		Log.d("com.unarin.cordova.beacon", "BackgroundBeaconService.didExitRegion called!");
+		Log.d(TAG, "BackgroundBeaconService.didExitRegion called!");
 	}
 
 	@Override
 	public void didDetermineStateForRegion(int i, Region region) {
-		Log.d("com.unarin.cordova.beacon", "BackgroundBeaconService.didDetermineStateForRegion called!");
+		Log.d(TAG, "BackgroundBeaconService.didDetermineStateForRegion called!");
 	}
 
 	@Override

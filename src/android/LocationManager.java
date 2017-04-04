@@ -63,7 +63,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
 public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
-    public static final String TAG = "com.unarin.beacon";
+    public static final String TAG = "com.unarin.cordova.beacon";
     private static final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
     private static final String FOREGROUND_BETWEEN_SCAN_PERIOD_NAME = "com.unarin.cordova.beacon.android.altbeacon.ForegroundBetweenScanPeriod";
     private static final int DEFAULT_FOREGROUND_BETWEEN_SCAN_PERIOD = 0;
@@ -134,6 +134,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
      */
     @Override
     public void onDestroy() {
+		debugLog("Activity being Destroyed.");
         // TODO: do we need this with BackgroundBeaconService?
         /*iBeaconManager.unbind(this);
 
