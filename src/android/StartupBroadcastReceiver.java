@@ -8,7 +8,7 @@ import android.util.Log;
 // source: https://github.com/Crashthatch/cordova-plugin-ibeacon/blob/6ceb5f04b6a4ca8fe31d1c591d75227142cdb3a8/src/android/StartupBroadcastReceiver.java
 public class StartupBroadcastReceiver extends BroadcastReceiver {
 
-	public static final String TAG = "com.unarin.cordova.beacon";
+	public static final String TAG = "CordovaBeacon";
 
 	@Override
 	public void onReceive(Context context, Intent intent) {

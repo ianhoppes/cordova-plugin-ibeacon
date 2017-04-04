@@ -23,7 +23,7 @@ public class BackgroundBeaconService extends Service implements BootstrapNotifie
 		super();
 	}
 
-	public static final String TAG = "com.unarin.cordova.beacon";
+	public static final String TAG = "CordovaBeacon";
 	private BackgroundPowerSaver backgroundPowerSaver;
 	private BeaconManager iBeaconManager;
 	private RegionBootstrap regionBootstrap;
