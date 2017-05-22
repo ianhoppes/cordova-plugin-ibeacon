@@ -25,24 +25,14 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.DialogInterface;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.ServiceConnection;
+import android.content.*;
 import android.content.pm.PackageManager;
-import android.os.AsyncTask;
-import android.os.Build;
-import android.os.Handler;
-import android.os.RemoteException;
+import android.os.*;
 import android.util.Log;
 
 import org.altbeacon.beacon.*;
-import org.altbeacon.beacon.powersave.BackgroundPowerSaver;
-import org.altbeacon.beacon.service.BeaconService;
-import org.altbeacon.beacon.startup.BootstrapNotifier;
-import org.altbeacon.beacon.startup.RegionBootstrap;
+import org.altbeacon.beacon.logging.LogManager;
+import org.altbeacon.beacon.logging.Loggers;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
@@ -60,13 +50,13 @@ import java.util.Collection;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
-@TargetApi(Build.VERSION_CODES.JELLY_BEAN)
+@TargetApi(Build.VERSION_CODES.KITKAT)
 public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
-    public static final String TAG = "CordovaBeacon";
+    private static final String TAG = "CordovaBeacon";
     private static final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
     private static final String FOREGROUND_BETWEEN_SCAN_PERIOD_NAME = "com.unarin.cordova.beacon.android.altbeacon.ForegroundBetweenScanPeriod";
-    private static final int DEFAULT_FOREGROUND_BETWEEN_SCAN_PERIOD = 0;
+    private static final int DEFAULT_FOREGROUND_BETWEEN_SCAN_PERIOD = 2000;
     private static int CDV_LOCATION_MANAGER_DOM_DELEGATE_TIMEOUT = 30;
     private static final int BUILD_VERSION_CODES_M = 23;
 
@@ -74,19 +64,33 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     private BlockingQueue<Runnable> queue;
     private PausableThreadPoolExecutor threadPoolExecutor;
 
-    private boolean debugEnabled = true;
+    private boolean debugEnabled = false;
     private IBeaconServiceNotifier beaconServiceNotifier;
 
     //listener for changes in state for system Bluetooth service
     private BroadcastReceiver broadcastReceiver;
     private BluetoothAdapter bluetoothAdapter;
 
+    private BackgroundBeaconService backgroundService;
+
+    private ServiceConnection backgroundConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            Log.d(TAG, "[BGSConn] Bound to Background service!");
+            backgroundService = ((BackgroundBeaconService.BackgroundBinder)service).getService();
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            Log.d(TAG, "[BGSConn] Unbound from Background service!");
+            backgroundService = null;
+        }
+    };
 
     /**
      * Constructor.
      */
-    public LocationManager() {
-    }
+    public LocationManager() { }
 
     /**
      * Sets the context of the Command. This can then be used to do things like
@@ -97,6 +101,8 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
      */
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
+
+        Log.d(TAG, "===== NEW INSTANCE =====");
 
         final Activity cordovaActivity = cordova.getActivity();
 
@@ -115,13 +121,17 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
         initLocationManager();
 
-        debugEnabled = true;
+        // Start BackgroundBeaconService.
+        Intent serviceIntent = new Intent(this.getApplicationContext(), BackgroundBeaconService.class);
+        this.getApplicationContext().startService(serviceIntent);
+        this.getApplicationContext().bindService(serviceIntent, this.backgroundConnection, 0);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
             initBluetoothAdapter();
         }
         //TODO AddObserver when page loaded
 
+        verifyBluetooth();
         tryToRequestMarshmallowLocationPermission();
     }
 
@@ -130,14 +140,15 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
      */
     @Override
     public void onDestroy() {
-		debugLog("Activity being Destroyed.");
+		Log.d(TAG,"Activity being Destroyed.");
         // TODO: do we need this with BackgroundBeaconService?
-        /*iBeaconManager.unbind(this);
+        iBeaconManager.unbind(this);
 
         if (broadcastReceiver != null) {
             cordova.getActivity().unregisterReceiver(broadcastReceiver);
             broadcastReceiver = null;
-        }*/
+        }
+        this.getApplicationContext().unbindService(this.backgroundConnection);
 
         super.onDestroy();
     }
@@ -170,6 +181,12 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             startMonitoringForRegion(args.optJSONObject(0), callbackContext);
         } else if (action.equals("stopMonitoringForRegion")) {
             stopMonitoringForRegion(args.optJSONObject(0), callbackContext);
+        } else if (action.equals("setBackgroundMonitoringRegion")) {
+            setBackgroundMonitoringRegion(args.optJSONObject(0), callbackContext);
+        } else if (action.equals("clearBackgroundMonitoringRegion")) {
+            clearBackgroundMonitoringRegion(callbackContext);
+        } else if (action.equals("setBackgroundMonitorNotification")) {
+            setBackgroundMonitorNotification(args.optString(0), args.optString(1), args.optString(2), callbackContext);
         } else if (action.equals("startRangingBeaconsInRegion")) {
             startRangingBeaconsInRegion(args.optJSONObject(0), callbackContext);
         } else if (action.equals("stopRangingBeaconsInRegion")) {
@@ -217,6 +234,30 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     private void initLocationManager() {
         iBeaconManager.getBeaconParsers().add(new BeaconParser().setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"));
         iBeaconManager.bind(this);
+    }
+
+    private void verifyBluetooth() {
+        try {
+            if (!iBeaconManager.checkAvailability()) {
+                final AlertDialog.Builder builder = new AlertDialog.Builder(this.getApplicationContext());
+                builder.setTitle("Bluetooth not enabled")
+                        .setMessage("You must enable Bluetooth for this application to work properly.")
+                        .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                bluetoothAdapter.enable();
+                            }
+                        })
+                        .setNegativeButton(android.R.string.no, null);
+                builder.show();
+            }
+        } catch (RuntimeException e) {
+            final AlertDialog.Builder builder = new AlertDialog.Builder(this.getApplicationContext());
+            builder.setTitle("Bluetooth LE not available")
+                    .setMessage("This device does not support Bluetooth LE; some things may not work properly.")
+                    .setPositiveButton(android.R.string.ok, null);
+            builder.show();
+        }
     }
 
     @TargetApi(BUILD_VERSION_CODES_M)
@@ -438,15 +479,17 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         String warning = "WARNING did not receive delegate ready callback from DOM after " + CDV_LOCATION_MANAGER_DOM_DELEGATE_TIMEOUT + " seconds!";
         debugWarn(warning);
 
-        webView.sendJavascript("console.warn('" + warning + "')");
+        this.sendJavascript("console.warn('" + warning + "')");
     }
 
     ///////// CALLBACKS ////////////////////////////
 
     private void createMonitorCallbacks(final CallbackContext callbackContext) {
 
+        iBeaconManager.removeAllMonitorNotifiers();
+
         //Monitor callbacks
-        iBeaconManager.setMonitorNotifier(new MonitorNotifier() {
+        iBeaconManager.addMonitorNotifier(new MonitorNotifier() {
             @Override
             public void didEnterRegion(Region region) {
                 debugLog("foreground didEnterRegion INSIDE for " + region.getUniqueId());
@@ -498,7 +541,9 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void createRangingCallbacks(final CallbackContext callbackContext) {
 
-        iBeaconManager.setRangeNotifier(new RangeNotifier() {
+        iBeaconManager.removeAllRangeNotifiers();
+
+        iBeaconManager.addRangeNotifier(new RangeNotifier() {
             @Override
             public void didRangeBeaconsInRegion(final Collection<Beacon> iBeacons, final Region region) {
 
@@ -541,7 +586,6 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             public void rangingBeaconsDidFailForRegion(final Region region, final Exception exception) {
                 threadPoolExecutor.execute(new Runnable() {
                     public void run() {
-
                         sendFailEvent("rangingBeaconsDidFailForRegion", region, exception, callbackContext);
                     }
                 });
@@ -551,7 +595,6 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             public void monitoringDidFailForRegion(final Region region, final Exception exception) {
                 threadPoolExecutor.execute(new Runnable() {
                     public void run() {
-
                         sendFailEvent("monitoringDidFailForRegionWithError", region, exception, callbackContext);
                     }
                 });
@@ -561,7 +604,6 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             public void didStartMonitoringForRegion(final Region region) {
                 threadPoolExecutor.execute(new Runnable() {
                     public void run() {
-
                         try {
                             JSONObject data = new JSONObject();
                             data.put("eventType", "didStartMonitoringForRegion");
@@ -575,7 +617,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                             callbackContext.sendPluginResult(result);
 
                         } catch (Exception e) {
-                            Log.e(TAG, "'startMonitoringForRegion' exception " + e.getCause());
+                            Log.e(TAG, "'(did)startMonitoringForRegion' exception " + e.getCause());
                             monitoringDidFailForRegion(region, e);
                         }
                     }
@@ -673,7 +715,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
 
     private void enableBluetooth(CallbackContext callbackContext) {
-
+        
         _handleCallSafely(callbackContext, new ILocationManagerCommand() {
 
             @Override
@@ -693,7 +735,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void disableBluetooth(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+       _handleCallSafely(callbackContext, new ILocationManagerCommand() {
 
             @Override
             public PluginResult run() {
@@ -712,12 +754,13 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void disableDebugNotifications(CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+         _handleCallSafely(callbackContext, new ILocationManagerCommand() {
 
             @Override
             public PluginResult run() {
                 debugEnabled = false;
-                BeaconManager.setDebug(false);
+                setDebugLogging(false);
+                Log.d(TAG, "Debug disabled");
                 //android.bluetooth.BluetoothAdapter.DBG = false;
                 return new PluginResult(PluginResult.Status.OK);
             }
@@ -731,7 +774,8 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             public PluginResult run() {
                 debugEnabled = true;
                 //android.bluetooth.BluetoothAdapter.DBG = true;
-                BeaconManager.setDebug(true);
+                setDebugLogging(true);
+                Log.d(TAG, "Debug enabled");
                 return new PluginResult(PluginResult.Status.OK);
             }
         });
@@ -745,7 +789,8 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             @Override
             public PluginResult run() {
                 debugEnabled = false;
-                BeaconManager.setDebug(false);
+                setDebugLogging(false);
+                Log.d(TAG, "Debug disabled");
                 //android.bluetooth.BluetoothAdapter.DBG = false;
                 return new PluginResult(PluginResult.Status.OK);
             }
@@ -759,7 +804,8 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
             public PluginResult run() {
                 debugEnabled = true;
                 //android.bluetooth.BluetoothAdapter.DBG = true;
-                BeaconManager.setDebug(true);
+                setDebugLogging(true);
+                Log.d(TAG, "Debug enabled");
                 return new PluginResult(PluginResult.Status.OK);
             }
         });
@@ -807,9 +853,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     beaconServiceNotifier.monitoringDidFailForRegion(region, e);
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 }
-
             }
-
         });
     }
 
@@ -835,7 +879,89 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     Log.e(TAG, "'stopMonitoringForRegion' exception " + e.getCause());
                     return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 }
+            }
+        });
 
+    }
+
+    private void setBackgroundMonitoringRegion(final JSONObject arguments, final CallbackContext callbackContext) {
+
+        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+
+            @Override
+            public PluginResult run() {
+
+                Region region = null;
+                try {
+                    if(backgroundService != null) backgroundService.setBackgroundMonitoringRegion(arguments);
+                    else throw new Exception("Background service not available");
+
+                    PluginResult result = new PluginResult(PluginResult.Status.OK);
+                    result.setKeepCallback(true);
+                    return result;
+
+                } catch (RemoteException e) {
+                    Log.e(TAG, "'setBackgroundMonitoringRegion' service error: " + e.getCause());
+                    beaconServiceNotifier.monitoringDidFailForRegion(region, e);
+                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                } catch (Exception e) {
+                    Log.e(TAG, "'setBackgroundMonitoringRegion' exception " + e.getCause());
+                    beaconServiceNotifier.monitoringDidFailForRegion(region, e);
+                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                }
+            }
+        });
+    }
+
+    private void clearBackgroundMonitoringRegion(final CallbackContext callbackContext) {
+
+        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+
+            @Override
+            public PluginResult run() {
+
+                try {
+                    if(backgroundService != null) backgroundService.clearBackgroundMonitoringRegion();
+                    else throw new Exception("Background service not available");
+
+                    PluginResult result = new PluginResult(PluginResult.Status.OK);
+                    result.setKeepCallback(true);
+                    return result;
+
+                } catch (RemoteException e) {
+                    Log.e(TAG, "'clearBackgroundMonitoringRegion' service error: " + e.getCause());
+                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                } catch (Exception e) {
+                    Log.e(TAG, "'clearBackgroundMonitoringRegion' exception " + e.getCause());
+                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                }
+            }
+        });
+
+    }
+
+    private void setBackgroundMonitorNotification(final String icon, final String title, final String body, final CallbackContext callbackContext) {
+
+        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+
+            @Override
+            public PluginResult run() {
+
+                try {
+                    if(backgroundService != null) backgroundService.setBackgroundMonitorNotification(icon, title, body);
+                    else throw new Exception("Background service not available");
+
+                    PluginResult result = new PluginResult(PluginResult.Status.OK);
+                    result.setKeepCallback(true);
+                    return result;
+
+                } catch (RemoteException e) {
+                    Log.e(TAG, "'setBackgroundMonitorNotification' service error: " + e.getCause());
+                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                } catch (Exception e) {
+                    Log.e(TAG, "'setBackgroundMonitorNotification' exception " + e.getCause());
+                    return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                }
             }
         });
 
@@ -843,7 +969,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
     private void startRangingBeaconsInRegion(final JSONObject arguments, final CallbackContext callbackContext) {
 
-        _handleCallSafely(callbackContext, new ILocationManagerCommand() {
+       _handleCallSafely(callbackContext, new ILocationManagerCommand() {
 
             @Override
             public PluginResult run() {
@@ -1411,6 +1537,31 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     public boolean bindService(Intent intent, ServiceConnection connection, int mode) {
         debugLog("Bind to IBeacon service");
         return cordova.getActivity().bindService(intent, connection, mode);
+    }
+
+    // util functions
+
+    private void sendJavascript(final String javascript) {
+        webView.getView().post(new Runnable() {
+            @Override
+            public void run() {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                    webView.sendJavascript(javascript);
+                } else {
+                    webView.loadUrl("javascript:" + javascript);
+                }
+            }
+        });
+    }
+
+    private void setDebugLogging(boolean b) {
+        if(b) {
+            LogManager.setLogger(Loggers.verboseLogger());
+            LogManager.setVerboseLoggingEnabled(true);
+        } else {
+            LogManager.setLogger(Loggers.empty());
+            LogManager.setVerboseLoggingEnabled(false);
+        }
     }
 
 }

@@ -38,13 +38,13 @@ var BeaconRegion = require('com.unarin.cordova.beacon.BeaconRegion');
  * @constructor {LocationManager}
  */
 
- function LocationManager (){
+function LocationManager () {
 	this.delegate = new Delegate();
 	this._registerDelegateCallbackId();
 
 	this.bindMethodContexts();
-	
- }
+
+}
  
 /**
  * Binds the contexts of instance methods to the actual {LocationManager}
@@ -297,6 +297,30 @@ LocationManager.prototype.startMonitoringForRegion = function(region) {
 LocationManager.prototype.stopMonitoringForRegion = function(region) {
 	Regions.checkRegionType(region);
 	return this._promisedExec('stopMonitoringForRegion', [region], []);
+};
+
+/**
+ * @param {string} icon The res-path icon of the notification
+ * @param {string} title The title of the notification
+ * @param {string} body The body of the notification
+ */
+LocationManager.prototype.setBackgroundMonitorNotification = function(icon, title, body) {
+	return this._promisedExec('setBackgroundMonitorNotification', [icon, title, body], []);
+};
+
+/**
+ * @param {Region} region A region object
+ */
+LocationManager.prototype.setBackgroundMonitoringRegion = function(region) {
+    Regions.checkRegionType(region);
+    return this._promisedExec('setBackgroundMonitoringRegion', [region], []);
+};
+
+/**
+ * @param {Region} region A region object
+ */
+LocationManager.prototype.clearBackgroundMonitoringRegion = function() {
+    return this._promisedExec('clearBackgroundMonitoringRegion', [], []);
 };
 
 /**

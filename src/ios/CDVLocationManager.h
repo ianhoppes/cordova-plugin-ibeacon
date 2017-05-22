@@ -33,6 +33,8 @@ const int CDV_LOCATION_MANAGER_INPUT_PARSE_ERROR = 100;
 
 }
 
+@property CBCentralManager* bluetoothManager;
+
 @property (retain) NSOperationQueue *queue;
 
 @property (retain) CLLocationManager *locationManager;

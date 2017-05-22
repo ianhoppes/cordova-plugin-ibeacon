@@ -38,6 +38,12 @@
     self.debugNotificationsEnabled = false;
     
     [self resumeEventPropagationToDom]; // DOM propagation when Location Manager, PeripheralManager initiated
+
+    // I tried: https://github.com/255kb/cordova-plugin-bluetooth-status/blob/master/src/ios/BluetoothStatus.m
+    self.bluetoothManager = [[CBCentralManager alloc]
+                             initWithDelegate: self
+                             queue: dispatch_get_main_queue()
+                             options: @{CBCentralManagerOptionShowPowerAlertKey: @(YES)}];
 }
 
 - (void) initLocationManager {
